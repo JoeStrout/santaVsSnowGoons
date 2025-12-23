@@ -1,4 +1,5 @@
 import "textUtil"
+import "textUI"
 
 clear
 gfx.clear "#88FF88"
@@ -21,10 +22,32 @@ gfx.drawImage santa, 960-50-santa.width, 50
 
 textUtil.printCenteredAt 34, 5, "Click anywhere to begin!"
 
+Sound.stopAll
+if not env.hasIndex("bgmOn") then env.bgmOn = true
+
+textUtil.printAt 2, 0, "Music:"
+bgmSwitch = textUI.Switch.make(9, 0)
+bgmSwitch.isOn = env.bgmOn
+bgmSwitch.action = function(x)
+	env.bgmOn = x
+	if x then bgm.play 0.5 else bgm.stop
+end function
+bgmSwitch.start
+
+bgm = file.loadSound("music/titleScreenMusic.ogg")
+bgm.loop = true
+if env.bgmOn then bgm.play 0.5
+
 while true
 	yield
-	if mouse.button then
+	textUI.update
+	if mouse.button and not bgmSwitch.containsMouse then
 		while mouse.button; yield; end while
+		for i in range(0.5, 0, -0.05)
+			bgm.adjust i
+			yield
+		end for
+		Sound.stopAll
 		run "snowGoons"
 	end if
 end while

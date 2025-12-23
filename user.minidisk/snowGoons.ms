@@ -7,6 +7,12 @@ display(2).mode = displayMode.pixel
 curtain = display(2)
 curtain.clear color.clear
 
+Sound.stopAll
+if not env.hasIndex("bgmOn") then env.bgmOn = true
+bgm = file.loadSound("music/bgmLoop.ogg")
+bgm.loop = true
+if env.bgmOn then bgm.play 0.4
+
 loadPics = function	
 	outer.pics = {}
 	for name in file.children("/usr/pics")
@@ -231,6 +237,7 @@ endRound = function
 end function
 
 endGame = function
+	sounds.brr.play
 	santa.tint = "#AAAAFF"
 	closeCurtain
 	setCurtain 0.95
@@ -238,10 +245,12 @@ endGame = function
 	key.clear
 	for i in range(120)
 		Particle.UpdateAll
+		bgm.adjust 0.5 * i/120
 		yield
 		if key.available then break
 	end for
 	key.clear
+	Sound.stopAll
 	reset; run "startup"
 end function
 
@@ -322,6 +331,7 @@ handleKey = function
 end function
 
 doMeltyHeart = function
+	sounds.hoHoHo.play
 	hs = new Sprite
 	hs.image = pics.heart
 	hs.x = santa.x
