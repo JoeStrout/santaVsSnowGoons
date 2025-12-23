@@ -7,6 +7,8 @@ display(2).mode = displayMode.pixel
 curtain = display(2)
 curtain.clear color.clear
 
+score = 0
+
 Sound.stopAll
 if not env.hasIndex("bgmOn") then env.bgmOn = true
 bgm = file.loadSound("music/bgmLoop.ogg")
@@ -33,7 +35,7 @@ end function
 loadSounds
 
 cellSize = 32
-rows = 640 / cellSize
+rows = floor((640 - 20) / cellSize)
 cols = 960 / cellSize
 
 display(5).mode = displayMode.tile
@@ -67,6 +69,7 @@ end function
 santa = new TileSprite
 santa.image = pics.santa
 santa.hit = false
+santa.hearts = 3
 spriteDisp.sprites.push santa
 
 arrow = new TileSprite
@@ -100,11 +103,18 @@ SnowGoon.finishMove = function
 	self.update
 	if self.col == santa.col and self.row == santa.row then
 		santa.hit = true
+		return
 	end if
 	if safe then return
-	other = goonAt(newcol, newrow)
-	if other then other.dead = true
-	self.dead = true
+	if not self.dead then
+		outer.score += 10
+		self.dead = true
+	end if
+	other = SnowGoon.At(newcol, newrow)
+	if other and not other.dead then
+		other.dead = true
+		outer.score += 10
+	end if
 	tileDisp.setCell newcol, newrow, 1
 	Particle.MakeMany self.x, self.y, 20
 	sounds.impact.play
@@ -113,13 +123,43 @@ end function
 SnowGoon.remove = function
 	spriteDisp.sprites.removeVal self
 	goons.removeVal self
+	drawStatus
 end function
 
-goonAt = function(col, row)
+SnowGoon.At = function(col, row)
 	for goon in goons
 		if goon.col == col and goon.row == row then return goon
 	end for
 	return null
+end function
+
+Heart = new TileSprite
+Heart.image = pics.heart
+Heart.Instances = []
+Heart.Make = function(col, row)
+	h = new self
+	h.col = col
+	h.row = row
+	h.update
+	spriteDisp.sprites.push h
+	Heart.Instances.push h
+	return h
+end function
+Heart.At = function(col, row)
+	for h in self.Instances
+		if h.col == col and h.row == row then return h
+	end for
+	return null
+end function
+Heart.UpdateAll = function
+	newScale = santa.scale * (1 + 0.1 * sin(time*5))
+	for h in Heart.Instances
+		h.scale = newScale
+	end for
+end function
+Heart.remove = function
+	spriteDisp.sprites.removeVal self
+	Heart.Instances.removeVal self
 end function
 
 Particle = new Sprite
@@ -172,6 +212,7 @@ closeCurtain = function
 	for t in range(0, 1, 1/60)
 		setCurtain t
 		Particle.UpdateAll
+		Heart.UpdateAll
 		yield
 	end for
 end function
@@ -180,6 +221,7 @@ openCurtain = function
 	for t in range(1, 0, -1/60)
 		setCurtain t
 		Particle.UpdateAll
+		Heart.UpdateAll
 		yield
 	end for
 	curtain.clear color.clear
@@ -189,10 +231,20 @@ isEmpty = function(col, row)
 	if col < 0 or col >= tileDisp.extent[0] then return false
 	if row < 0 or row >= tileDisp.extent[1] then return false
 	if tileDisp.cell(col, row) > 0 then return false
-	if goonAt(col, row) then return false
+	if SnowGoon.At(col, row) then return false
 	return true
 end function
 
+drawStatus = function
+	text.row = 25; text.column = 0
+	text.color = "#FF4444"
+	print "HEARTS: " + santa.hearts, "  "
+	text.column = 30
+	print "SCORE: " + score, "  "
+	text.column = 59
+	print "GOONS: " + goons.len + "  "
+end function
+	
 updateTarget = function(dcol, drow)
 	outer.target = {}
 	target.col = santa.col + dcol
@@ -214,7 +266,7 @@ trackMouse = function
 		return
 	end if
 	angle = atan(mouse.y - santa.y, mouse.x - santa.x) * 180/pi
-	angle = round((angle - 22.5) / 45) * 45
+	angle = round(angle / 45) * 45
 	arrow.rotation = angle
 	rad = angle * pi/180
 	updateTarget round(cos(rad)), round(sin(rad))
@@ -227,8 +279,11 @@ endTurn = function
 	for i in range(goons.len-1, 0, -1)
 		if goons[i].dead then goons[i].remove
 	end for
-	if not goons then endRound
-	if santa.hit then endGame
+	if santa.hit then
+		endGame
+	else if not goons then
+		endRound
+	end if
 end function
 
 endRound = function
@@ -245,12 +300,14 @@ endGame = function
 	key.clear
 	for i in range(120)
 		Particle.UpdateAll
+		Heart.UpdateAll
 		bgm.adjust 0.5 * i/120
 		yield
 		if key.available then break
 	end for
 	key.clear
 	Sound.stopAll
+	env.lastScore = score
 	reset; run "startup"
 end function
 
@@ -259,8 +316,8 @@ startRound = function
 	for i in range(10)
 		tileDisp.setCell floor(cols*rnd), floor(rows*rnd), 1
 	end for
-	santa.col = cols / 2
-	santa.row = rows / 2
+	santa.col = round(cols / 2)
+	santa.row = round(rows / 2)
 	santa.update
 	arrow.update
 	tileDisp.setCell santa.col, santa.row, 0
@@ -270,12 +327,23 @@ startRound = function
 		while true
 			goon.col = floor(cols*rnd)
 			goon.row = floor(rows*rnd)
+			if goon.col == santa.col or goon.row == santa.row then continue
 			if isEmpty(goon.col, goon.row) then break
 		end while
 		goon.update
 		goons.push goon
 		spriteDisp.sprites.push goon
 	end for
+	for i in range(3 * rnd)
+		while true
+			col = floor(cols * rnd)
+			row = floor(rows * rnd)
+			if col == santa.col and row == santa.row then continue
+			if isEmpty(col, row) then break
+		end while
+		Heart.Make col, row
+	end for
+	drawStatus
 	openCurtain
 end function
 
@@ -283,6 +351,14 @@ moveToTarget = function
 	if not target.valid then return
 	santa.col = target.col
 	santa.row = target.row
+	heart = Heart.At(santa.col, santa.row)
+	if heart then
+		sounds.gotHeart.play
+		santa.hearts += 1
+		heart.remove
+		outer.score += 25
+		drawStatus
+	end if
 	santa.update
 	arrow.update
 	endTurn
@@ -321,7 +397,7 @@ handleKey = function
 		handleArrowKeys
 	else if k == " " then
 		endTurn
-	else if k == "h" then
+	else if k == "h" and santa.hearts then
 		doMeltyHeart
 		endTurn
 	else if kc == 27 then
@@ -331,7 +407,10 @@ handleKey = function
 end function
 
 doMeltyHeart = function
+	if santa.hearts < 1 then return
 	sounds.hoHoHo.play
+	santa.hearts -= 1
+	drawStatus
 	hs = new Sprite
 	hs.image = pics.heart
 	hs.x = santa.x
@@ -358,6 +437,8 @@ doMeltyHeart = function
 	for goon in victims
 		goon.remove
 	end for
+	outer.score += 5 * victims.len
+	drawStatus
 end function
 
 lastMousePos = mouse + {}
@@ -366,6 +447,7 @@ mainLoop = function
 	while true
 		yield
 		Particle.UpdateAll
+		Heart.UpdateAll
 		if mouse != lastMousePos then
 			lastMousePos = mouse + {}
 			trackMouse
